@@ -14,5 +14,17 @@
     <string>3ML6V62AF5.com.themarco.timebox-nowplaying</string>
     <key>com.apple.developer.team-identifier</key>
     <string>3ML6V62AF5</string>
+
+    <!-- Hardened-runtime resource-access entitlements, required once the app is notarized
+         (release.sh signs with the hardened runtime option). They're self-granted
+         code-signing entitlements, not managed capabilities, so they don't need to be in
+         the profile; in the non-hardened debug build they're simply inert. Omit either one
+         and the notarized app silently loses that capability even with TCC granted. -->
+    <!-- Microphone capture for Shazam (SHManagedSession). -->
+    <key>com.apple.security.device.audio-input</key>
+    <true/>
+    <!-- Send Apple events to Music.app for the System source's artwork fallback. -->
+    <key>com.apple.security.automation.apple-events</key>
+    <true/>
 </dict>
 </plist>
