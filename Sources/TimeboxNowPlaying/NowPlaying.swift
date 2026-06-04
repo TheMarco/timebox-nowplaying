@@ -71,8 +71,13 @@ enum NowPlaying {
 
         // Ask for a bigger image than the 100px thumbnail the API returns by default.
         let big = art.replacingOccurrences(of: "100x100bb", with: "600x600bb")
-        guard let imgURL = URL(string: big),
-              let (imgData, _) = try? await URLSession.shared.data(from: imgURL),
+        guard let imgURL = URL(string: big) else { return nil }
+        return await artwork(from: imgURL)
+    }
+
+    /// Download and decode artwork from a remote URL (e.g. Shazam's `artworkURL`).
+    static func artwork(from url: URL) async -> CGImage? {
+        guard let (imgData, _) = try? await URLSession.shared.data(from: url),
               let src = CGImageSourceCreateWithData(imgData as CFData, nil),
               let cgImage = CGImageSourceCreateImageAtIndex(src, 0, nil) else { return nil }
         return cgImage

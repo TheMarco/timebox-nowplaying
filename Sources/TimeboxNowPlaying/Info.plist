@@ -18,5 +18,7 @@
     <string>Sends now-playing artwork and a clock to your Timebox display over Bluetooth.</string>
     <key>NSAppleEventsUsageDescription</key>
     <string>Reads the current track's album artwork from Music to show it on your Timebox.</string>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>Listens to nearby music with Shazam to identify the song and show its cover on your Timebox.</string>
 </dict>
 </plist>

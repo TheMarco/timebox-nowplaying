@@ -1,5 +1,6 @@
 import Foundation
 import CoreGraphics
+import AVFoundation
 import TimeboxBluetooth
 import TimeboxKit
 
@@ -19,6 +20,17 @@ final class TimeboxController: ObservableObject {
     enum ClockStyle { case off, analog, digital }
     @Published var clockStyle: ClockStyle = .digital
 
+    /// Where the album art / track name comes from. `system` reads the OS "now playing"
+    /// (any player, via MediaRemote); `shazam` listens on the mic and identifies whatever
+    /// is in the room. Mirrors the iOS app's source toggle.
+    enum ArtSource { case system, shazam }
+    @Published var artSource: ArtSource = .system {
+        didSet {
+            guard running, oldValue != artSource else { return }
+            restartSource()
+        }
+    }
+
     private enum Target { case albumArt, analog, digital }
 
     private let client = TimeboxClient()
@@ -27,6 +39,10 @@ final class TimeboxController: ObservableObject {
     private var restartCycle = false    // new song: jump back to the cover before scrolling
     private var lastTrackKey = ""
     private var targetDevice: TimeboxDevice?
+
+    // Stored as AnyObject so the property type doesn't force the macOS 14 floor onto the
+    // whole class — the concrete `ShazamRecognizer` is gated `@available(macOS 14, *)`.
+    private var shazamBox: AnyObject?
 
     private var loop: Task<Void, Never>?
     private var pollTask: Task<Void, Never>?
@@ -68,7 +84,7 @@ final class TimeboxController: ObservableObject {
     func disconnect() {
         running = false
         loop?.cancel(); loop = nil
-        pollTask?.cancel(); pollTask = nil
+        stopSource()
         client.disconnect()
         isConnected = false
         artFrame = nil
@@ -80,8 +96,35 @@ final class TimeboxController: ObservableObject {
     private func startLoops() {
         guard !running else { return }
         running = true
-        pollTask = Task { await pollNowPlaying() }
+        startSource()
         loop = Task { await runLoop() }
+    }
+
+    // MARK: - Art sources
+
+    private func startSource() {
+        switch artSource {
+        case .system:
+            pollTask = Task { await pollNowPlaying() }
+        case .shazam:
+            startShazam()
+        }
+    }
+
+    private func stopSource() {
+        pollTask?.cancel(); pollTask = nil
+        if #available(macOS 14.0, *) { (shazamBox as? ShazamRecognizer)?.stop() }
+    }
+
+    /// Tear down the current source and bring up the newly-selected one (keeps the render
+    /// loop running — just the art feed swaps). Clears the current cover/track so stale art
+    /// from the old source doesn't linger.
+    private func restartSource() {
+        stopSource()
+        artFrame = nil
+        nowPlayingText = "—"
+        lastTrackKey = ""
+        startSource()
     }
 
     /// Poll the OS "now playing" every few seconds; when the track changes, refresh the
@@ -103,6 +146,63 @@ final class TimeboxController: ObservableObject {
                 nowPlayingText = "—"
             }
             try? await Task.sleep(nanoseconds: 4_000_000_000)
+        }
+    }
+
+    // MARK: - Shazam source
+
+    @available(macOS 14.0, *)
+    private var shazam: ShazamRecognizer {
+        if let existing = shazamBox as? ShazamRecognizer { return existing }
+        let recognizer = ShazamRecognizer()
+        shazamBox = recognizer
+        return recognizer
+    }
+
+    private func startShazam() {
+        guard #available(macOS 14.0, *) else {
+            statusText = "Shazam needs macOS 14 or later"
+            return
+        }
+        // Request mic access up front so the failure mode is a clear status line rather than
+        // a silent stream of empty recognitions. SHManagedSession captures the default input.
+        AVCaptureDevice.requestAccess(for: .audio) { [weak self] granted in
+            Task { @MainActor in
+                guard let self, self.running, self.artSource == .shazam else { return }
+                guard granted else {
+                    self.statusText = "Microphone access denied — enable it in System Settings → Privacy → Microphone"
+                    return
+                }
+                self.wireShazam()
+                self.shazam.start()
+            }
+        }
+    }
+
+    @available(macOS 14.0, *)
+    private func wireShazam() {
+        let recognizer = shazam
+        recognizer.onStatus = { [weak self] text in self?.statusText = text }
+        recognizer.onSong = { [weak self] song in
+            guard let self else { return }
+            let key = [song.artist, song.title].compactMap { $0 }.joined(separator: "|")
+            guard !key.isEmpty, key != self.lastTrackKey else { return }   // same song still playing
+            self.lastTrackKey = key
+            self.nowPlayingText = [song.artist, song.title].compactMap { $0 }.joined(separator: " — ")
+            guard let url = song.artworkURL else {
+                // No artwork URL from Shazam — fall back to an iTunes Search lookup.
+                let title = song.title, artist = song.artist
+                Task { [weak self] in
+                    if let cg = await NowPlaying.iTunesArtwork(title: title, artist: artist),
+                       let frame = self?.makeArt(cg) { self?.setArt(frame) }
+                }
+                return
+            }
+            Task { [weak self] in
+                if let cg = await NowPlaying.artwork(from: url), let frame = self?.makeArt(cg) {
+                    self?.setArt(frame)
+                }
+            }
         }
     }
 

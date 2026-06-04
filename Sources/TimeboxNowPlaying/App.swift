@@ -62,6 +62,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         artItem.state = controller.showAlbumArt ? .on : .off
         menu.addItem(artItem)
 
+        let sourceItem = NSMenuItem(title: "Source", action: nil, keyEquivalent: "")
+        let sourceMenu = NSMenu()
+        let system = NSMenuItem(title: "Now Playing (System)", action: #selector(setSystemSource), keyEquivalent: "")
+        system.target = self
+        system.state = (controller.artSource == .system) ? .on : .off
+        let shazam = NSMenuItem(title: "Shazam (listen)", action: #selector(setShazamSource), keyEquivalent: "")
+        shazam.target = self
+        shazam.state = (controller.artSource == .shazam) ? .on : .off
+        sourceMenu.addItem(system)
+        sourceMenu.addItem(shazam)
+        sourceItem.submenu = sourceMenu
+        menu.addItem(sourceItem)
+
         let intervalItem = NSMenuItem(title: "Album-art dwell: \(controller.intervalSeconds)s", action: nil, keyEquivalent: "")
         let submenu = NSMenu()
         for seconds in [5, 10, 12, 15, 30, 60] {
@@ -117,6 +130,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc private func setNoClock() { controller.clockStyle = .off }
     @objc private func setAnalogClock() { controller.clockStyle = .analog }
     @objc private func setDigitalClock() { controller.clockStyle = .digital }
+    @objc private func setSystemSource() { controller.artSource = .system }
+    @objc private func setShazamSource() { controller.artSource = .shazam }
     @objc private func toggleAlbumArt() { controller.showAlbumArt.toggle() }
     @objc private func quit() { NSApp.terminate(nil) }
 }
