@@ -57,9 +57,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         toggle.target = self
         menu.addItem(toggle)
 
-        let intervalItem = NSMenuItem(title: "Switch every \(controller.intervalSeconds)s", action: nil, keyEquivalent: "")
+        let artItem = NSMenuItem(title: "Album art", action: #selector(toggleAlbumArt), keyEquivalent: "")
+        artItem.target = self
+        artItem.state = controller.showAlbumArt ? .on : .off
+        menu.addItem(artItem)
+
+        let intervalItem = NSMenuItem(title: "Album-art dwell: \(controller.intervalSeconds)s", action: nil, keyEquivalent: "")
         let submenu = NSMenu()
-        for seconds in [3, 5, 10, 15, 30, 60] {
+        for seconds in [5, 10, 12, 15, 30, 60] {
             let option = NSMenuItem(title: "\(seconds)s", action: #selector(setInterval(_:)), keyEquivalent: "")
             option.target = self
             option.tag = seconds
@@ -69,14 +74,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         intervalItem.submenu = submenu
         menu.addItem(intervalItem)
 
-        let styleItem = NSMenuItem(title: "Clock style", action: nil, keyEquivalent: "")
+        let styleItem = NSMenuItem(title: "Clock", action: nil, keyEquivalent: "")
         let styleMenu = NSMenu()
+        let offItem = NSMenuItem(title: "Off", action: #selector(setNoClock), keyEquivalent: "")
+        offItem.target = self
+        offItem.state = (controller.clockStyle == .off) ? .on : .off
         let analog = NSMenuItem(title: "Analog", action: #selector(setAnalogClock), keyEquivalent: "")
         analog.target = self
         analog.state = (controller.clockStyle == .analog) ? .on : .off
-        let digital = NSMenuItem(title: "Digital (Tiny5)", action: #selector(setDigitalClock), keyEquivalent: "")
+        let digital = NSMenuItem(title: "Digital", action: #selector(setDigitalClock), keyEquivalent: "")
         digital.target = self
         digital.state = (controller.clockStyle == .digital) ? .on : .off
+        styleMenu.addItem(offItem)
         styleMenu.addItem(analog)
         styleMenu.addItem(digital)
         styleItem.submenu = styleMenu
@@ -105,7 +114,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc private func connect() { controller.connect() }
     @objc private func disconnect() { controller.disconnect() }
     @objc private func setInterval(_ sender: NSMenuItem) { controller.intervalSeconds = sender.tag }
+    @objc private func setNoClock() { controller.clockStyle = .off }
     @objc private func setAnalogClock() { controller.clockStyle = .analog }
     @objc private func setDigitalClock() { controller.clockStyle = .digital }
+    @objc private func toggleAlbumArt() { controller.showAlbumArt.toggle() }
     @objc private func quit() { NSApp.terminate(nil) }
 }

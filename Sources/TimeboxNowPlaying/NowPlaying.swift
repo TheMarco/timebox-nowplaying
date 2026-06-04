@@ -1,5 +1,6 @@
 import Foundation
 import AppKit
+import ImageIO
 
 struct NowPlayingInfo {
     var title: String? = nil
@@ -52,6 +53,29 @@ enum NowPlaying {
             }
             completion(info)
         }
+    }
+
+    /// Fallback artwork when the player exposes no embedded art (e.g. Apple Music
+    /// streaming): look the track up on the iTunes Search API by "artist title".
+    static func iTunesArtwork(title: String?, artist: String?) async -> CGImage? {
+        let term = [artist, title].compactMap { $0 }.joined(separator: " ")
+        guard !term.isEmpty,
+              let q = term.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
+              let url = URL(string: "https://itunes.apple.com/search?term=\(q)&entity=song&limit=1")
+        else { return nil }
+
+        guard let (data, _) = try? await URLSession.shared.data(from: url),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let results = json["results"] as? [[String: Any]],
+              let art = results.first?["artworkUrl100"] as? String else { return nil }
+
+        // Ask for a bigger image than the 100px thumbnail the API returns by default.
+        let big = art.replacingOccurrences(of: "100x100bb", with: "600x600bb")
+        guard let imgURL = URL(string: big),
+              let (imgData, _) = try? await URLSession.shared.data(from: imgURL),
+              let src = CGImageSourceCreateWithData(imgData as CFData, nil),
+              let cgImage = CGImageSourceCreateImageAtIndex(src, 0, nil) else { return nil }
+        return cgImage
     }
 }
 
