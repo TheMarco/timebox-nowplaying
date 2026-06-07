@@ -12,3 +12,7 @@ xcuserdata/
 # Signing artifact tied to a specific Apple Developer account — build-app.sh reads it
 # locally to authorize Shazam, but it shouldn't live in this (public) repo.
 TimeboxNowPlaying.provisionprofile
+
+# Python bytecode caches from the tools/ smoke-test scripts.
+__pycache__/
+*.pyc

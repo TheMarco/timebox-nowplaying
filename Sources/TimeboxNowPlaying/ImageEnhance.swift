@@ -1,10 +1,10 @@
 import Foundation
 import TimeboxKit
 
-/// Boosts saturation and contrast so small 16x16 album art reads better.
+/// Boosts saturation and contrast so downscaled album art reads better on an LED panel.
 enum ImageEnhance {
-    static func punchUp(_ frame: PixelFrame, saturation: Double = 1.5, contrast: Double = 1.18) -> PixelFrame {
-        let pixels = frame.pixels.map { pixel -> PixelRGB in
+    static func punchUp(_ surface: Surface, saturation: Double = 1.5, contrast: Double = 1.18) -> Surface {
+        let pixels = surface.pixels.map { pixel -> PixelRGB in
             var r = Double(pixel.red) / 255.0
             var g = Double(pixel.green) / 255.0
             var b = Double(pixel.blue) / 255.0
@@ -22,6 +22,6 @@ enum ImageEnhance {
             func byte(_ v: Double) -> UInt8 { UInt8(max(0, min(255, (v * 255).rounded()))) }
             return PixelRGB(red: byte(r), green: byte(g), blue: byte(b))
         }
-        return (try? PixelFrame(pixels: pixels)) ?? frame
+        return Surface(width: surface.width, height: surface.height, pixels: pixels) ?? surface
     }
 }

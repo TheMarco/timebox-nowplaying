@@ -1,12 +1,13 @@
 import Foundation
 import TimeboxKit
 
-/// Linear crossfade between two 16x16 frames.
+/// Linear crossfade between two equally-sized surfaces.
 enum Blend {
-    /// `steps` intermediate frames from `a` toward `b`, ending exactly on `b`.
-    static func crossfade(from a: PixelFrame, to b: PixelFrame, steps: Int) -> [PixelFrame] {
-        guard steps > 0 else { return [b] }
-        var frames: [PixelFrame] = []
+    /// `steps` intermediate surfaces from `a` toward `b`, ending exactly on `b`.
+    /// If the two differ in size, returns `[b]` (nothing sensible to interpolate).
+    static func crossfade(from a: Surface, to b: Surface, steps: Int) -> [Surface] {
+        guard steps > 0, a.pixels.count == b.pixels.count else { return [b] }
+        var frames: [Surface] = []
         frames.reserveCapacity(steps)
         for step in 1...steps {
             let t = Double(step) / Double(steps)
@@ -20,7 +21,7 @@ enum Blend {
                     blue: lerp(ca.blue, cb.blue, t)
                 ))
             }
-            frames.append((try? PixelFrame(pixels: pixels)) ?? b)
+            frames.append(Surface(width: a.width, height: a.height, pixels: pixels) ?? b)
         }
         return frames
     }

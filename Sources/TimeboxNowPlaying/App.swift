@@ -30,10 +30,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         item.menu = menu
         statusItem = item
 
-        // Trigger the macOS Bluetooth permission prompt; re-scan once granted.
-        permission.onChange = { [weak self] in self?.controller.refreshDevices() }
+        // Trigger the macOS Bluetooth permission prompt (used by the Timebox path).
+        // Device discovery now happens on-demand when the user picks a device to connect to.
         permission.start()
-        controller.refreshDevices()
     }
 
     func menuNeedsUpdate(_ menu: NSMenu) {
@@ -49,13 +48,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         menu.addItem(.separator())
 
-        let toggle = NSMenuItem(
-            title: controller.isConnected ? "Disconnect" : "Connect to Timebox",
-            action: controller.isConnected ? #selector(disconnect) : #selector(connect),
-            keyEquivalent: ""
-        )
-        toggle.target = self
-        menu.addItem(toggle)
+        if controller.isConnected {
+            let disconnectItem = NSMenuItem(title: "Disconnect", action: #selector(disconnect), keyEquivalent: "")
+            disconnectItem.target = self
+            menu.addItem(disconnectItem)
+        } else {
+            let connectItem = NSMenuItem(title: "Connect", action: nil, keyEquivalent: "")
+            let connectMenu = NSMenu()
+
+            let timebox = NSMenuItem(title: "Timebox (Bluetooth)", action: #selector(connectTimebox), keyEquivalent: "")
+            timebox.target = self
+            connectMenu.addItem(timebox)
+
+            connectMenu.addItem(.separator())
+
+            let pixooAuto = NSMenuItem(title: "Pixoo 64 — find on network", action: #selector(connectPixooAuto), keyEquivalent: "")
+            pixooAuto.target = self
+            connectMenu.addItem(pixooAuto)
+
+            let pixooIP = NSMenuItem(title: "Pixoo 64 — enter IP address…", action: #selector(connectPixooIP), keyEquivalent: "")
+            pixooIP.target = self
+            connectMenu.addItem(pixooIP)
+
+            connectItem.submenu = connectMenu
+            menu.addItem(connectItem)
+        }
 
         let artItem = NSMenuItem(title: "Album art", action: #selector(toggleAlbumArt), keyEquivalent: "")
         artItem.target = self
@@ -124,8 +141,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(quit)
     }
 
-    @objc private func connect() { controller.connect() }
+    @objc private func connectTimebox() { controller.connectTimebox() }
+    @objc private func connectPixooAuto() { controller.connectPixooAuto() }
     @objc private func disconnect() { controller.disconnect() }
+
+    /// Prompt for the Pixoo's IP and connect. The last-used address is remembered.
+    @objc private func connectPixooIP() {
+        let alert = NSAlert()
+        alert.messageText = "Connect to Pixoo 64"
+        alert.informativeText = "Enter your Pixoo's IP address. You can find it in the Divoom app under the device's settings."
+        alert.addButton(withTitle: "Connect")
+        alert.addButton(withTitle: "Cancel")
+
+        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 220, height: 24))
+        field.placeholderString = "192.168.1.42"
+        field.stringValue = UserDefaults.standard.string(forKey: "PixooHost") ?? ""
+        alert.accessoryView = field
+        alert.window.initialFirstResponder = field
+
+        NSApp.activate(ignoringOtherApps: true)
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        let host = field.stringValue.trimmingCharacters(in: .whitespaces)
+        guard !host.isEmpty else { return }
+        UserDefaults.standard.set(host, forKey: "PixooHost")
+        controller.connectPixoo(host: host)
+    }
     @objc private func setInterval(_ sender: NSMenuItem) { controller.intervalSeconds = sender.tag }
     @objc private func setNoClock() { controller.clockStyle = .off }
     @objc private func setAnalogClock() { controller.clockStyle = .analog }

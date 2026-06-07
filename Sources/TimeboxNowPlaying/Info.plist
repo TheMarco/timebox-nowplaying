@@ -19,6 +19,15 @@
     <key>NSAppleEventsUsageDescription</key>
     <string>Reads the current track's album artwork from Music to show it on your Timebox.</string>
     <key>NSMicrophoneUsageDescription</key>
-    <string>Listens to nearby music with Shazam to identify the song and show its cover on your Timebox.</string>
+    <string>Listens to nearby music with Shazam to identify the song and show its cover on your display.</string>
+    <key>NSLocalNetworkUsageDescription</key>
+    <string>Finds and sends now-playing artwork and a clock to your Divoom Pixoo 64 over Wi-Fi.</string>
+    <!-- The Pixoo's HTTP API is plain http on the local network; allow it (private/loopback
+         addresses only) while keeping App Transport Security on for everything else. -->
+    <key>NSAppTransportSecurity</key>
+    <dict>
+        <key>NSAllowsLocalNetworking</key>
+        <true/>
+    </dict>
 </dict>
 </plist>
