@@ -33,6 +33,9 @@ struct Surface: Equatable {
         guard x >= 0, x < width, y >= 0, y < height else { return }
         pixels[y * width + x] = color
     }
+
+    /// Read a pixel (no bounds check — callers stay in range).
+    func at(_ x: Int, _ y: Int) -> PixelRGB { pixels[y * width + x] }
 }
 
 extension Surface {

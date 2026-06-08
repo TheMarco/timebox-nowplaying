@@ -1,30 +1,31 @@
 import Foundation
+import CoreGraphics
 import TimeboxKit
 
-/// Digital clock: a 12-hour "H:MM" time with a flashing red colon, plus a scrolling
-/// "Artist — Title" ticker. Two native layouts:
+/// Digital clock: a 12-hour "H:MM" time plus a scrolling "Artist — Title" ticker. Two layouts:
 ///
-/// - **16×16** (Timebox): the original cramped layout — a 3×5 digit font pinned up top and
-///   a 5px ticker below. Reproduced exactly.
-/// - **64×64** (Pixoo): a bold, neon layout — the shared `PixelFont` scaled ×3 with a
-///   top-light→accent gradient fill, a soft glow halo, an accent radial bloom and underline,
-///   all tinted by the album-art `accent`. The scrolling title is drawn separately by the
-///   Pixoo's own text engine in the bottom band.
+/// - **16×16** (Timebox): the original cramped layout — a 3×5 digit font pinned up top and a
+///   5px ticker below. Reproduced exactly.
+/// - **64×64** (Pixoo): a "hero card" — a cinematic background (the album art darkened +
+///   vignetted, or a procedural synthwave sun + perspective grid when there's no art) with a
+///   real **7-segment LCD** time floating over it: chamfered segments, faint "ghost" unlit
+///   segments, a soft glow, and a slight italic lean, tinted by the album-art `accent`. The
+///   scrolling title is drawn separately by the Pixoo's own text engine in the bottom band,
+///   which this leaves darkened for legibility.
 enum DigitalClockRenderer {
     static func surface(for date: Date, ticker: String = "", scroll: Int = 0, size: Int,
-                        tickerScale: Int = 1, accent: PixelRGB? = nil, calendar: Calendar = .current,
-                        use24Hour: Bool = false) -> Surface {
+                        tickerScale: Int = 1, accent: PixelRGB? = nil, art: Surface? = nil,
+                        calendar: Calendar = .current, use24Hour: Bool = false) -> Surface {
         size == 16
             ? small(for: date, ticker: ticker, scroll: scroll, calendar: calendar, use24Hour: use24Hour)
             : large(for: date, ticker: ticker, scroll: scroll, size: size, tickerScale: tickerScale,
-                    accent: accent, calendar: calendar, use24Hour: use24Hour)
+                    accent: accent, art: art, calendar: calendar, use24Hour: use24Hour)
     }
 
     // MARK: - Time tokens (shared)
 
     private enum Token { case digit(Int), colon }
 
-    /// 12/24-hour "H:MM" as tokens, dropping a 12-hour leading-zero hour.
     private static func timeTokens(_ date: Date, calendar: Calendar, use24Hour: Bool) -> [Token] {
         let comps = calendar.dateComponents([.hour, .minute], from: date)
         var hour = comps.hour ?? 0
@@ -61,8 +62,8 @@ enum DigitalClockRenderer {
     private static func small(for date: Date, ticker: String, scroll: Int,
                               calendar: Calendar, use24Hour: Bool) -> Surface {
         var surface = Surface(width: 16, height: 16)
-        let timeTopY = 2   // time occupies rows 2...6
-        let tickerTopY = 9 // 5px ticker occupies rows 9...13
+        let timeTopY = 2
+        let tickerTopY = 9
 
         let white = PixelRGB(red: 255, green: 255, blue: 255)
         let red = PixelRGB(red: 255, green: 40, blue: 40)
@@ -96,7 +97,6 @@ enum DigitalClockRenderer {
             x += tokenWidth(t) + (i < tokens.count - 1 ? gap : 0)
         }
 
-        // Ticker: scrolls in from the right edge and slides off the left as `scroll` grows.
         let text = ticker.trimmingCharacters(in: .whitespaces)
         if !text.isEmpty {
             for (i, col) in PixelFont.columns(for: text).enumerated() {
@@ -108,125 +108,217 @@ enum DigitalClockRenderer {
         return surface
     }
 
-    // MARK: - 64×64 (rich neon Pixoo layout)
+    // MARK: - 64×64 (hero card)
 
     private static func large(for date: Date, ticker: String, scroll: Int, size: Int,
-                              tickerScale: Int, accent: PixelRGB?, calendar: Calendar,
-                              use24Hour: Bool) -> Surface {
-        var surface = Surface(width: size, height: size)
+                              tickerScale: Int, accent: PixelRGB?, art: Surface?,
+                              calendar: Calendar, use24Hour: Bool) -> Surface {
+        var s = Surface(width: size, height: size)
         let acc = Palette.vivid(accent ?? PixelRGB(red: 90, green: 180, blue: 255))
-        let lit = colonLit(date, calendar)
+        let titleBand = 16   // bottom rows reserved for the native scrolling title
 
-        let timeScale = 3
-        let glyphH = PixelFont.height * timeScale            // 15
-        let tokens = timeTokens(date, calendar: calendar, use24Hour: use24Hour)
-        let gap = timeScale                                  // one blank source column between tokens
-
-        let tokenCols = tokens.map { token -> [[Bool]] in
-            switch token {
-            case .digit(let d): return PixelFont.columns(for: String(d), tracking: 0)
-            case .colon: return PixelFont.columns(for: ":", tracking: 0)
-            }
-        }
-        let totalW = tokenCols.map { $0.count * timeScale }.reduce(0, +) + gap * (tokens.count - 1)
-        let originX = (size - totalW) / 2
-        let topY = max(0, (size / 2 - glyphH) / 2)           // centered in the top half
-
-        // Soft accent glow behind the time.
-        radialGlow(into: &surface, cx: size/2, cy: topY + glyphH/2, radius: 26, color: acc, peak: 0.26)
-
-        // Gradient digit fill (top white → accent-tinted bottom) with a neon halo. The colon
-        // is a flat accent and flashes once a second.
-        let gradTop = PixelRGB(red: 255, green: 255, blue: 255)
-        let gradBottom = Palette.mix(acc, PixelRGB(red: 255, green: 255, blue: 255), 0.25)
-        var x = originX
-        for (i, cols) in tokenCols.enumerated() {
-            let isColon: Bool = { if case .colon = tokens[i] { return true }; return false }()
-            if !(isColon && !lit) {
-                blitGlow(cols, originX: x, originY: topY, scale: timeScale, halo: acc, into: &surface)
-                blit(cols, originX: x, originY: topY, scale: timeScale,
-                     gradTop: gradTop, gradBottom: gradBottom, flat: isColon ? acc : nil,
-                     glyphH: glyphH, into: &surface)
-            }
-            x += cols.count * timeScale + (i < tokens.count - 1 ? gap : 0)
+        if let art, art.width == size, art.height == size {
+            artBackground(into: &s, art: art, accent: acc, titleBand: titleBand)
+        } else {
+            synthwave(into: &s, accent: acc, titleBand: titleBand)
         }
 
-        // Accent underline directly beneath the time (edge-faded). Kept clear of the bottom
-        // band where the Pixoo's native text engine scrolls the title.
-        let black = PixelRGB(red: 0, green: 0, blue: 0)
-        let ulY = topY + glyphH + 2
-        let ulHalf = totalW/2 + 2
-        if ulHalf > 0 {
-            for bx in (size/2 - ulHalf)...(size/2 + ulHalf) {
-                let edge = min(bx - (size/2 - ulHalf), (size/2 + ulHalf) - bx)
-                let a = min(1.0, Double(edge) / 5.0)
-                surface.set(bx, ulY, Palette.mix(black, acc, 0.9 * a))
-            }
-        }
+        drawLCDTime(into: &s, date: date, accent: acc, topY: 6, height: 26,
+                    calendar: calendar, use24Hour: use24Hour)
 
-        // Fallback streamed ticker. On the Pixoo the title is drawn by the device's native text
-        // engine (smoother than HTTP streaming), so `ticker` is normally empty here; this only
-        // renders if a caller streams the title in-frame.
+        // Optional streamed ticker (normally empty on the Pixoo — the device scrolls the title
+        // natively in the bottom band).
         let text = ticker.trimmingCharacters(in: .whitespaces)
         if !text.isEmpty {
-            let tickerH = PixelFont.height * tickerScale
-            let tickerTopY = size - tickerH - 3
+            let th = PixelFont.height * tickerScale
+            let ty = size - th - 3
             for (i, col) in PixelFont.columns(for: text).enumerated() {
-                let screenX = i * tickerScale - scroll + size
-                if screenX <= -tickerScale || screenX >= size { continue }
-                for y in 0..<PixelFont.height where col[y] {
-                    for dx in 0..<tickerScale {
-                        for dy in 0..<tickerScale {
-                            surface.set(screenX + dx, tickerTopY + y * tickerScale + dy, acc)
-                        }
-                    }
+                let sx = i*tickerScale - scroll + size
+                if sx <= -tickerScale || sx >= size { continue }
+                for gy in 0..<PixelFont.height where col[gy] {
+                    for dx in 0..<tickerScale { for dy in 0..<tickerScale {
+                        s.set(sx+dx, ty + gy*tickerScale + dy, PixelRGB(red: 240, green: 245, blue: 255))
+                    }}
                 }
             }
         }
-        return surface
+        return s
     }
 
-    /// Blit `PixelFont` columns as `scale`×`scale` blocks; digits get a vertical gradient
-    /// (by row), a `flat` color overrides it (used for the colon).
-    private static func blit(_ columns: [[Bool]], originX: Int, originY: Int, scale: Int,
-                             gradTop: PixelRGB, gradBottom: PixelRGB, flat: PixelRGB?,
-                             glyphH: Int, into surface: inout Surface) {
-        for (cx, col) in columns.enumerated() {
-            for (cy, on) in col.enumerated() where on {
-                let px = originX + cx * scale, py = originY + cy * scale
-                let t = Double(cy * scale) / Double(max(1, glyphH - 1))
-                let color = flat ?? Palette.mix(gradTop, gradBottom, t)
-                for dy in 0..<scale { for dx in 0..<scale { surface.set(px + dx, py + dy, color) } }
+    // MARK: - 7-segment LCD time
+
+    // Segments a,b,c,d,e,f,g.
+    private static let segMap: [Int: [Bool]] = [
+        0: [true,true,true,true,true,true,false], 1: [false,true,true,false,false,false,false],
+        2: [true,true,false,true,true,false,true], 3: [true,true,true,true,false,false,true],
+        4: [false,true,true,false,false,true,true], 5: [true,false,true,true,false,true,true],
+        6: [true,false,true,true,true,true,true], 7: [true,true,true,false,false,false,false],
+        8: [true,true,true,true,true,true,true], 9: [true,true,true,true,false,true,true]
+    ]
+
+    /// Draw the time as glowing 7-segment LCD digits (with faint ghost segments + italic lean),
+    /// composited over whatever `s` already holds.
+    private static func drawLCDTime(into s: inout Surface, date: Date, accent: PixelRGB,
+                                    topY: Int, height dh: Double, calendar: Calendar, use24Hour: Bool) {
+        let size = s.width, ss = 8, dim = size * ss
+        guard let ctx = CGContext(data: nil, width: dim, height: dim, bitsPerComponent: 8, bytesPerRow: 0,
+                                  space: CGColorSpaceCreateDeviceRGB(),
+                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return }
+        ctx.setShouldAntialias(true)
+        ctx.scaleBy(x: CGFloat(ss), y: CGFloat(ss))
+        ctx.translateBy(x: 0, y: CGFloat(size)); ctx.scaleBy(x: 1, y: -1)   // author top-down
+        let cs = CGColorSpaceCreateDeviceRGB()
+        func cg(_ c: PixelRGB, _ a: Double) -> CGColor {
+            CGColor(colorSpace: cs, components: [Double(c.red)/255, Double(c.green)/255, Double(c.blue)/255, a])!
+        }
+
+        let dw = 12.0, t = 3.0, gap = 1.0, colonW = 5.0
+        let tokens = timeTokens(date, calendar: calendar, use24Hour: use24Hour)
+        func tw(_ tk: Token) -> Double { if case .colon = tk { return colonW }; return dw }
+        let total = tokens.map(tw).reduce(0, +) + gap * Double(tokens.count - 1)
+        var x = (Double(size) - total) / 2
+        let oy = Double(topY)
+        let skew = 1.6   // px of italic lean across the digit height
+
+        func shear(_ px: Double, _ py: Double) -> CGPoint { CGPoint(x: px + skew * (1 - (py - oy)/dh), y: py) }
+        func hbar(_ ox: Double, _ yc: Double, _ w: Double) -> CGPath {
+            let p = CGMutablePath(), i = 0.6
+            let pts = [(ox+t*0.5+i,yc),(ox+t+i,yc-t*0.5),(ox+w-t-i,yc-t*0.5),(ox+w-t*0.5-i,yc),(ox+w-t-i,yc+t*0.5),(ox+t+i,yc+t*0.5)]
+            p.move(to: shear(pts[0].0, pts[0].1)); for k in 1..<pts.count { p.addLine(to: shear(pts[k].0, pts[k].1)) }; p.closeSubpath(); return p
+        }
+        func vbar(_ xc: Double, _ oyy: Double, _ h: Double) -> CGPath {
+            let p = CGMutablePath(), i = 0.6
+            let pts = [(xc,oyy+t*0.5+i),(xc+t*0.5,oyy+t+i),(xc+t*0.5,oyy+h-t-i),(xc,oyy+h-t*0.5-i),(xc-t*0.5,oyy+h-t-i),(xc-t*0.5,oyy+t+i)]
+            p.move(to: shear(pts[0].0, pts[0].1)); for k in 1..<pts.count { p.addLine(to: shear(pts[k].0, pts[k].1)) }; p.closeSubpath(); return p
+        }
+        func segPaths(_ ox: Double) -> [CGPath] {
+            [ hbar(ox, oy+t*0.5, dw),                       // a
+              vbar(ox+dw-t*0.5, oy, dh/2+t*0.5),            // b
+              vbar(ox+dw-t*0.5, oy+dh/2-t*0.5, dh/2+t*0.5), // c
+              hbar(ox, oy+dh-t*0.5, dw),                    // d
+              vbar(ox+t*0.5, oy+dh/2-t*0.5, dh/2+t*0.5),    // e
+              vbar(ox+t*0.5, oy, dh/2+t*0.5),               // f
+              hbar(ox, oy+dh/2, dw) ]                       // g
+        }
+
+        let core = Palette.mix(PixelRGB(red: 255, green: 255, blue: 255), accent, 0.18)
+        for tk in tokens {
+            switch tk {
+            case .digit(let d):
+                let segs = segPaths(x), on = segMap[d]!
+                for p in segs { ctx.addPath(p) }; ctx.setFillColor(cg(accent, 0.12)); ctx.fillPath()   // ghost
+                let litPath = CGMutablePath(); for (k, p) in segs.enumerated() where on[k] { litPath.addPath(p) }
+                ctx.addPath(litPath); ctx.setStrokeColor(cg(accent, 0.5)); ctx.setLineWidth(2.2); ctx.setLineJoin(.round); ctx.strokePath()  // glow
+                ctx.addPath(litPath); ctx.setFillColor(cg(core, 1)); ctx.fillPath()
+                x += dw + gap
+            case .colon:
+                let cxp = x + colonW/2, r = t*0.55
+                let dots = colonLit(date, calendar)
+                for cy in [oy + dh*0.34, oy + dh*0.66] {
+                    let rect = CGRect(x: shear(cxp, cy).x - r, y: cy - r, width: r*2, height: r*2)
+                    ctx.addEllipse(in: rect); ctx.setFillColor(cg(accent, 0.12)); ctx.fillPath()
+                    if dots {
+                        ctx.addEllipse(in: rect); ctx.setStrokeColor(cg(accent, 0.5)); ctx.setLineWidth(2.0); ctx.strokePath()
+                        ctx.addEllipse(in: rect); ctx.setFillColor(cg(core, 1)); ctx.fillPath()
+                    }
+                }
+                x += colonW + gap
             }
+        }
+
+        guard let img = ctx.makeImage() else { return }
+        let bpr = size*4; var buf = [UInt8](repeating: 0, count: bpr*size)
+        guard let dctx = CGContext(data: &buf, width: size, height: size, bitsPerComponent: 8, bytesPerRow: bpr,
+                                   space: cs, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return }
+        dctx.interpolationQuality = .high
+        dctx.draw(img, in: CGRect(x: 0, y: 0, width: size, height: size))
+        for y in 0..<size { for xx in 0..<size {
+            let o = y*bpr + xx*4
+            let a = Double(buf[o+3]) / 255
+            if a <= 0.003 { continue }
+            let base = s.at(xx, y)   // composite premultiplied-over
+            s.set(xx, y, PixelRGB(red: byte(Double(buf[o])/255 + Double(base.red)/255*(1-a)),
+                                  green: byte(Double(buf[o+1])/255 + Double(base.green)/255*(1-a)),
+                                  blue: byte(Double(buf[o+2])/255 + Double(base.blue)/255*(1-a))))
+        }}
+    }
+
+    private static func byte(_ v: Double) -> UInt8 { UInt8(max(0, min(255, (v*255).rounded()))) }
+
+    // MARK: - Backgrounds
+
+    /// Album art, darkened + vignetted, with a strong scrim under the title band.
+    private static func artBackground(into s: inout Surface, art: Surface, accent: PixelRGB, titleBand: Int) {
+        let size = s.width
+        let cx = Double(size)/2, cy = Double(size)/2, maxd = (Double(size)/2) * 1.18
+        for y in 0..<size { for x in 0..<size {
+            var c = Palette.darken(art.at(x, y), 0.42)
+            let d = (((Double(x)-cx)*(Double(x)-cx) + (Double(y)-cy)*(Double(y)-cy)).squareRoot()) / maxd
+            c = Palette.darken(c, 1 - min(0.6, d*0.6))                 // radial vignette
+            let intoBand = y - (size - titleBand)
+            if intoBand > -3 {                                         // title band → near-black so the native ticker reads
+                let f = min(1.0, Double(intoBand + 3) / Double(titleBand))
+                c = Palette.mix(c, PixelRGB(red: 4, green: 5, blue: 8), min(0.96, f * 1.15))
+            }
+            s.set(x, y, c)
+        }}
+        let ry = size - titleBand - 1                                 // faint accent rule
+        for x in 4..<(size-4) {
+            let edge = min(x-4, (size-5)-x)
+            s.set(x, ry, Palette.mix(s.at(x, ry), accent, 0.5 * min(1.0, Double(edge)/6.0)))
         }
     }
 
-    /// A 1px neon halo around the glyph, painted only onto currently-black pixels.
-    private static func blitGlow(_ columns: [[Bool]], originX: Int, originY: Int, scale: Int,
-                                 halo: PixelRGB, into surface: inout Surface) {
-        let black = PixelRGB(red: 0, green: 0, blue: 0)
-        let h = Palette.mix(black, halo, 0.55)
-        for (cx, col) in columns.enumerated() {
-            for (cy, on) in col.enumerated() where on {
-                let px = originX + cx * scale, py = originY + cy * scale
-                for dy in -1...scale { for dx in -1...scale {
-                    let xx = px + dx, yy = py + dy
-                    guard xx >= 0, yy >= 0, xx < surface.width, yy < surface.height else { continue }
-                    if surface.pixels[yy * surface.width + xx] == black { surface.set(xx, yy, h) }
-                }}
+    /// Retro "synthwave" fallback: gradient sky, a slit sun, and a perspective grid.
+    private static func synthwave(into s: inout Surface, accent: PixelRGB, titleBand: Int) {
+        let size = s.width
+        let horizon = Int(Double(size) * 0.60)
+        let skyTop = PixelRGB(red: 14, green: 6, blue: 34)
+        let skyHorizon = Palette.mix(PixelRGB(red: 90, green: 20, blue: 90), accent, 0.35)
+        for y in 0..<horizon { for x in 0..<size {
+            s.set(x, y, Palette.mix(skyTop, skyHorizon, pow(Double(y)/Double(horizon), 1.6)))
+        }}
+        let sunR = Double(size) * 0.26
+        let sx = Double(size)/2, sy = Double(horizon) - sunR*0.35
+        let sunTop = PixelRGB(red: 255, green: 240, blue: 180)
+        let sunBot = Palette.vivid(Palette.mix(accent, PixelRGB(red: 255, green: 60, blue: 140), 0.5))
+        for y in 0..<horizon { for x in 0..<size {
+            let dx = Double(x)-sx, dy = Double(y)-sy
+            if dx*dx + dy*dy <= sunR*sunR {
+                let t = (Double(y) - (sy - sunR)) / (2*sunR)
+                var c = Palette.mix(sunTop, sunBot, max(0, min(1, t)))
+                let below = Double(y) - sy
+                if below > 0 {
+                    let period = max(2, Int(2.0 + (1 - below/sunR) * 5.0))
+                    if Int(below) % period == 0 { c = Palette.darken(c, 0.15) }
+                }
+                s.set(x, y, c)
+            }
+        }}
+        for y in horizon..<size { for x in 0..<size {
+            s.set(x, y, Palette.mix(PixelRGB(red: 18, green: 6, blue: 30),
+                                    PixelRGB(red: 4, green: 2, blue: 10),
+                                    Double(y-horizon)/Double(size-horizon)))
+        }}
+        let grid = Palette.vivid(accent)
+        var i = 0
+        while true {
+            let y = horizon + Int(pow(Double(i)/10.0, 1.8) * Double(size - horizon))
+            if y >= size { break }
+            for x in 0..<size { s.set(x, y, Palette.mix(s.at(x, y), grid, 0.55)) }
+            i += 1
+        }
+        let vpx = Double(size)/2
+        for k in -7...7 {
+            for y in horizon..<size {
+                let p = Double(y - horizon) / Double(size - horizon)
+                let xx = Int(vpx + Double(k) * p * (Double(size) * 0.16))
+                if xx >= 0, xx < size { s.set(xx, y, Palette.mix(s.at(xx, y), grid, 0.35)) }
             }
         }
-    }
-
-    private static func radialGlow(into surface: inout Surface, cx: Int, cy: Int, radius: Int,
-                                   color: PixelRGB, peak: Double) {
-        guard radius > 0 else { return }
-        for y in 0..<surface.height { for x in 0..<surface.width {
-            let d = (Double((x-cx)*(x-cx) + (y-cy)*(y-cy))).squareRoot()
-            if d > Double(radius) { continue }
-            let a = peak * (1 - d / Double(radius))
-            let base = surface.pixels[y * surface.width + x]
-            surface.set(x, y, Palette.mix(base, color, a))
+        for y in (size - titleBand)..<size { for x in 0..<size {
+            let f = Double(y - (size - titleBand) + 1) / Double(titleBand)
+            s.set(x, y, Palette.mix(s.at(x, y), PixelRGB(red: 4, green: 5, blue: 8), min(0.96, f * 1.15)))
         }}
     }
 }

@@ -39,5 +39,19 @@ enum Palette {
         return PixelRGB(red: l(a.red, b.red), green: l(a.green, b.green), blue: l(a.blue, b.blue))
     }
 
+    /// Multiply a color's brightness by `f`.
+    static func darken(_ c: PixelRGB, _ f: Double) -> PixelRGB {
+        PixelRGB(red: byte(Double(c.red)/255*f), green: byte(Double(c.green)/255*f), blue: byte(Double(c.blue)/255*f))
+    }
+
+    /// Screen-blend `c`·amt over `base` — brightens toward `c` (neon-like), never darkens.
+    static func screenAdd(_ base: PixelRGB, _ c: PixelRGB, _ amt: Double) -> PixelRGB {
+        func ch(_ b: UInt8, _ x: UInt8) -> UInt8 {
+            let bb = Double(b)/255, xx = min(1, Double(x)/255 * amt)
+            return byte(1 - (1-bb)*(1-xx))
+        }
+        return PixelRGB(red: ch(base.red, c.red), green: ch(base.green, c.green), blue: ch(base.blue, c.blue))
+    }
+
     private static func byte(_ v: Double) -> UInt8 { UInt8(max(0, min(255, (v*255).rounded()))) }
 }

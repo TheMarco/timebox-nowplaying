@@ -37,6 +37,8 @@ final class TimeboxController: ObservableObject {
     private var backend: DisplayBackend?
     private var profile = DisplayProfile.timebox
     private var renderSize: Int { profile.width }
+    /// Album art used as the digital "hero" background — only when the user is showing art.
+    private var digitalArt: Surface? { showAlbumArt ? artFrame : nil }
 
     private var artFrame: Surface?
     private var accentColor: PixelRGB?  // vivid color from the current cover; tints the 64×64 clocks + title
@@ -277,7 +279,7 @@ final class TimeboxController: ObservableObject {
         case .analog: return ClockRenderer.surface(for: Date(), size: renderSize, accent: accentColor)
         case .digital: return DigitalClockRenderer.surface(
             for: Date(), ticker: tickerText(), scroll: scroll,
-            size: renderSize, tickerScale: profile.tickerScale, accent: accentColor)
+            size: renderSize, tickerScale: profile.tickerScale, accent: accentColor, art: digitalArt)
         }
     }
 
@@ -405,10 +407,11 @@ final class TimeboxController: ObservableObject {
         case .analog:
             try? await pixoo.present(ClockRenderer.surface(for: Date(), size: renderSize, accent: accentColor), fade: fade)
         case .digital:
-            // Time-only background; the scrolling title is drawn by the device's text engine.
+            // Hero background (art or synthwave) + time; the scrolling title is drawn by the
+            // device's own text engine over the darkened bottom band.
             let bg = DigitalClockRenderer.surface(for: Date(), ticker: "", scroll: 0,
                                                   size: renderSize, tickerScale: profile.tickerScale,
-                                                  accent: accentColor)
+                                                  accent: accentColor, art: digitalArt)
             try? await pixoo.present(bg, fade: fade, text: pixooTitle())
         }
     }
@@ -462,7 +465,7 @@ final class TimeboxController: ObservableObject {
                             lastMinute = clockMinute()
                             let bg = DigitalClockRenderer.surface(for: Date(), ticker: "", scroll: 0,
                                                                   size: renderSize, tickerScale: profile.tickerScale,
-                                                                  accent: accentColor)
+                                                                  accent: accentColor, art: digitalArt)
                             try? await pixoo.present(bg, fade: false, text: pixooTitle())
                         }
                     case .albumArt:
