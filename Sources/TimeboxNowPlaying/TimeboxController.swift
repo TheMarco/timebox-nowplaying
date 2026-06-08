@@ -385,40 +385,11 @@ final class TimeboxController: ObservableObject {
 
     // MARK: - Native render loop (Pixoo)
 
-    private static let pixooTickerColor = PixelRGB(red: 120, green: 170, blue: 255)
-
-    /// Scrolling now-playing title for the Pixoo's native text engine, or nil when idle.
-    private func pixooTitle() -> PixooBackend.ScrollingText? {
-        let text = tickerText()
-        guard !text.isEmpty else { return nil }
-        return PixooBackend.ScrollingText(string: text, color: accentColor ?? Self.pixooTickerColor,
-                                          y: profile.height - 16)
-    }
-
     private func clockMinute() -> Int { Calendar.current.component(.minute, from: Date()) }
 
-    /// Present a target on the Pixoo. Entering a view fades through black; live refreshes
-    /// (`fade: false`) just re-send the frame so a ticking clock / new cover updates cleanly.
-    private func presentPixoo(_ target: Target, on pixoo: PixooBackend, fade: Bool) async {
-        switch target {
-        case .albumArt:
-            let frame = artFrame ?? ClockRenderer.surface(for: Date(), size: renderSize)
-            try? await pixoo.present(frame, fade: fade)
-        case .analog:
-            try? await pixoo.present(ClockRenderer.surface(for: Date(), size: renderSize, accent: accentColor), fade: fade)
-        case .digital:
-            // Hero background (art or synthwave) + time; the scrolling title is drawn by the
-            // device's own text engine over the darkened bottom band.
-            let bg = DigitalClockRenderer.surface(for: Date(), ticker: "", scroll: 0,
-                                                  size: renderSize, tickerScale: profile.tickerScale,
-                                                  accent: accentColor, art: digitalArt)
-            try? await pixoo.present(bg, fade: fade, text: pixooTitle())
-        }
-    }
-
-    /// The Pixoo can't stream frames smoothly, so instead of a per-tick loop it presents a
-    /// static view (fading in through black), dwells while refreshing only live content, then
-    /// fades to the next view. Scrolling text animates on the device the whole time.
+    /// The Pixoo can't stream frames smoothly, so each view fades in through black, then the
+    /// loop refreshes only live content. The digital view streams its title scrolling in from
+    /// the right exactly once (like the Timebox), then advances to the cover.
     private func runNativeLoop() async {
         guard let pixoo = backend as? PixooBackend else { return }
 
@@ -447,39 +418,83 @@ final class TimeboxController: ObservableObject {
                 let target = live[index]
                 let multi = live.count > 1
 
-                await presentPixoo(target, on: pixoo, fade: true)   // enter with a fade
-                var lastArtVersion = artVersion
-                var lastMinute = clockMinute()
-
-                // Dwell, refreshing only live content (no fade) until it's time to advance.
-                let dwellSeconds = Double(target == .digital ? max(6, intervalSeconds)
-                                                             : max(2, intervalSeconds))
-                let clock = ContinuousClock()
-                let deadline = clock.now.advanced(by: .seconds(dwellSeconds))
-                while running && !Task.isCancelled && isConnected && !restartCycle {
-                    switch target {
-                    case .analog:
-                        try? await pixoo.present(ClockRenderer.surface(for: Date(), size: renderSize, accent: accentColor), fade: false)
-                    case .digital:
-                        if clockMinute() != lastMinute {
-                            lastMinute = clockMinute()
-                            let bg = DigitalClockRenderer.surface(for: Date(), ticker: "", scroll: 0,
-                                                                  size: renderSize, tickerScale: profile.tickerScale,
-                                                                  accent: accentColor, art: digitalArt)
-                            try? await pixoo.present(bg, fade: false, text: pixooTitle())
-                        }
-                    case .albumArt:
-                        if artVersion != lastArtVersion {
-                            lastArtVersion = artVersion
-                            if let art = artFrame { try? await pixoo.present(art, fade: false) }
-                        }
-                    }
-                    if multi && clock.now >= deadline { break }
-                    try? await Task.sleep(nanoseconds: target == .analog ? 1_000_000_000 : 300_000_000)
+                switch target {
+                case .digital: await presentDigital(on: pixoo, multi: multi)
+                case .analog:  await presentAnalog(on: pixoo, multi: multi)
+                case .albumArt: await presentCover(on: pixoo, multi: multi)
                 }
 
-                if multi { index += 1 } else if restartCycle { break }
+                if multi { index += 1 }              // single target: re-enter (re-scroll / refresh)
             }
+        }
+    }
+
+    private var nativeLoopAlive: Bool {
+        running && !Task.isCancelled && isConnected && !restartCycle
+    }
+
+    /// Digital: fade in, scroll the "Artist — Title" in from the right exactly once, then
+    /// return so the loop transitions to the album cover. With no title, hold the clock.
+    private func presentDigital(on pixoo: PixooBackend, multi: Bool) async {
+        let title = tickerText()
+        var scroll = 0
+        func frame() -> Surface {
+            DigitalClockRenderer.surface(for: Date(), ticker: title, scroll: scroll,
+                                         size: renderSize, tickerScale: profile.tickerScale,
+                                         accent: accentColor, art: digitalArt)
+        }
+        try? await pixoo.present(frame(), fade: true)   // enter (title starts off the right edge)
+
+        guard !title.isEmpty else {                     // no song: just show the clock
+            let clock = ContinuousClock()
+            let deadline = clock.now.advanced(by: .seconds(Double(max(4, intervalSeconds))))
+            var lastMinute = clockMinute()
+            while nativeLoopAlive {
+                if clockMinute() != lastMinute { lastMinute = clockMinute(); try? await pixoo.present(frame(), fade: false) }
+                if multi && clock.now >= deadline { break }
+                try? await Task.sleep(nanoseconds: 500_000_000)
+            }
+            return
+        }
+
+        let span = tickerSpan(title)
+        while nativeLoopAlive {
+            scroll += profile.scrollStep
+            try? await pixoo.present(frame(), fade: false)
+            if scroll >= span {                         // one full pass complete
+                if multi { return }                     // → transition to the cover
+                scroll = 0                              // only the clock showing: loop the ticker
+            }
+            try? await Task.sleep(nanoseconds: 30_000_000)
+        }
+    }
+
+    /// Analog: fade in, then refresh ~once a second for the dwell.
+    private func presentAnalog(on pixoo: PixooBackend, multi: Bool) async {
+        func frame() -> Surface { ClockRenderer.surface(for: Date(), size: renderSize, accent: accentColor) }
+        try? await pixoo.present(frame(), fade: true)
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: .seconds(Double(max(2, intervalSeconds))))
+        while nativeLoopAlive {
+            try? await pixoo.present(frame(), fade: false)
+            if multi && clock.now >= deadline { break }
+            try? await Task.sleep(nanoseconds: 1_000_000_000)
+        }
+    }
+
+    /// Album cover: fade in, then hold for the dwell (re-sending only when a new cover arrives).
+    private func presentCover(on pixoo: PixooBackend, multi: Bool) async {
+        try? await pixoo.present(artFrame ?? ClockRenderer.surface(for: Date(), size: renderSize), fade: true)
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: .seconds(Double(max(2, intervalSeconds))))
+        var lastArtVersion = artVersion
+        while nativeLoopAlive {
+            if artVersion != lastArtVersion {
+                lastArtVersion = artVersion
+                if let art = artFrame { try? await pixoo.present(art, fade: false) }
+            }
+            if multi && clock.now >= deadline { break }
+            try? await Task.sleep(nanoseconds: 300_000_000)
         }
     }
 

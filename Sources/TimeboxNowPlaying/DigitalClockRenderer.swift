@@ -135,9 +135,10 @@ enum DigitalClockRenderer {
             for (i, col) in PixelFont.columns(for: text).enumerated() {
                 let sx = i*tickerScale - scroll + size
                 if sx <= -tickerScale || sx >= size { continue }
+                let tickerColor = Palette.mix(acc, PixelRGB(red: 255, green: 255, blue: 255), 0.35)
                 for gy in 0..<PixelFont.height where col[gy] {
                     for dx in 0..<tickerScale { for dy in 0..<tickerScale {
-                        s.set(sx+dx, ty + gy*tickerScale + dy, PixelRGB(red: 240, green: 245, blue: 255))
+                        s.set(sx+dx, ty + gy*tickerScale + dy, tickerColor)
                     }}
                 }
             }
