@@ -285,7 +285,7 @@ final class TimeboxController: ObservableObject {
 
     /// How far the ticker must scroll before it's fully off the left edge (device pixels).
     private func tickerSpan(_ text: String) -> Int {
-        PixelFont.columns(for: text).count * profile.tickerScale + profile.width
+        DigitalClockRenderer.tickerSpan(for: text, size: renderSize, tickerScale: profile.tickerScale)
     }
 
     private func runLoop() async {

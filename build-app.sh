@@ -17,6 +17,7 @@ cp "TimeboxNowPlaying-Info.plist" "$APP/Contents/Info.plist"
 
 mkdir -p "$APP/Contents/Resources"
 cp Fonts/Tiny5-Regular.ttf "$APP/Contents/Resources/"
+cp Fonts/KonamiClassic.otf "$APP/Contents/Resources/"
 [ -f Fonts/OFL.txt ] && cp Fonts/OFL.txt "$APP/Contents/Resources/"
 
 # Shazam (ShazamKit catalog matching) is authorized like it is on iOS: ShazamKit is an App

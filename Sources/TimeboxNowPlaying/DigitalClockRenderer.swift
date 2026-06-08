@@ -126,24 +126,29 @@ enum DigitalClockRenderer {
         drawLCDTime(into: &s, date: date, accent: acc, topY: 6, height: 26,
                     calendar: calendar, use24Hour: use24Hour)
 
-        // Optional streamed ticker (normally empty on the Pixoo — the device scrolls the title
-        // natively in the bottom band).
+        // Streamed "Artist — Title" ticker in the Konami arcade font (crisp, 1:1 device px).
         let text = ticker.trimmingCharacters(in: .whitespaces)
         if !text.isEmpty {
-            let th = PixelFont.height * tickerScale
-            let ty = size - th - 3
-            for (i, col) in PixelFont.columns(for: text).enumerated() {
-                let sx = i*tickerScale - scroll + size
-                if sx <= -tickerScale || sx >= size { continue }
-                let tickerColor = Palette.mix(acc, PixelRGB(red: 255, green: 255, blue: 255), 0.35)
-                for gy in 0..<PixelFont.height where col[gy] {
-                    for dx in 0..<tickerScale { for dy in 0..<tickerScale {
-                        s.set(sx+dx, ty + gy*tickerScale + dy, tickerColor)
-                    }}
-                }
+            let cols = ArcadeFont.columns(for: text)
+            let fh = ArcadeFont.height
+            let ty = size - fh - 4
+            let tickerColor = Palette.mix(acc, PixelRGB(red: 255, green: 255, blue: 255), 0.35)
+            for (i, col) in cols.enumerated() {
+                let sx = i - scroll + size           // enters from the right edge
+                if sx < 0 || sx >= size { continue }
+                for gy in 0..<fh where col[gy] { s.set(sx, ty + gy, tickerColor) }
             }
         }
+        _ = tickerScale
         return s
+    }
+
+    /// Scroll distance (device px) for the title to fully enter from the right and exit left.
+    static func tickerSpan(for text: String, size: Int, tickerScale: Int) -> Int {
+        let trimmed = text.trimmingCharacters(in: .whitespaces)
+        if trimmed.isEmpty { return 0 }
+        if size == 16 { return PixelFont.columns(for: trimmed).count * tickerScale + size }
+        return ArcadeFont.columns(for: trimmed).count + size   // 1:1 arcade font
     }
 
     // MARK: - 7-segment LCD time
