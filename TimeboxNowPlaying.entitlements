@@ -2,25 +2,11 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <!-- ShazamKit catalog matching is an App *Service* (enabled on the App ID in the
-         portal), NOT a profile capability/entitlement — there is no "shazamkit" entitlement.
-         Authorization works exactly like the iOS app: the bundle is signed claiming this
-         App ID identity, and an embedded provisioning profile (tied to the same App ID,
-         which has the ShazamKit service enabled) vouches for it. These two keys are the
-         App-ID identity; they're a subset of what the profile grants, so codesign accepts
-         them. build-app.sh applies these only when both a Developer ID identity and the
-         TimeboxNowPlaying.provisionprofile are present. -->
-    <key>com.apple.application-identifier</key>
-    <string>3ML6V62AF5.com.themarco.timebox-nowplaying</string>
-    <key>com.apple.developer.team-identifier</key>
-    <string>3ML6V62AF5</string>
-
-    <!-- Hardened-runtime resource-access entitlements, required once the app is notarized
-         (release.sh signs with the hardened runtime option). They're self-granted
-         code-signing entitlements, not managed capabilities, so they don't need to be in
-         the profile; in the non-hardened debug build they're simply inert. Omit either one
-         and the notarized app silently loses that capability even with TCC granted. -->
-    <!-- Microphone capture for Shazam (SHManagedSession). -->
+    <!-- Hardened-runtime resource-access entitlements (required once notarized). They're
+         self-granted code-signing entitlements, not managed capabilities, so they don't need a
+         provisioning profile. Network access and reading Claude Code's Keychain item need no
+         entitlement for a non-sandboxed Developer ID app. -->
+    <!-- Microphone capture for the optional Shazam now-playing source (SHManagedSession). -->
     <key>com.apple.security.device.audio-input</key>
     <true/>
     <!-- Send Apple events to Music.app for the System source's artwork fallback. -->

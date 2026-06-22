@@ -35,6 +35,14 @@ struct DisplayProfile {
         crossfadeSteps: 5, crossfadeStepDelay: 0,
         scrollStep: 4, tickerScale: 2, drivesNatively: true
     )
+
+    /// On-screen simulator: same 64×64 geometry as the Pixoo, but driven via the generic
+    /// streamed loop (no network), so frames + cross-dissolves render straight to the window.
+    static let simulator = DisplayProfile(
+        width: 64, height: 64, tick: 0.08,
+        crossfadeSteps: 8, crossfadeStepDelay: 28_000_000,
+        scrollStep: 4, tickerScale: 2, drivesNatively: false
+    )
 }
 
 /// A connected display the controller can push frames to. Connection is established by

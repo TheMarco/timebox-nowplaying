@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- Used when a Developer ID provisioning profile for com.aicreated.pixoo64-claude (with the
+         ShazamKit App Service enabled) is present. ShazamKit is an App *Service*, not an
+         entitlement: the bundle claims this App-ID identity and the embedded profile (tied to the
+         same App ID) vouches for it. These two keys are a subset of what the profile grants, so
+         codesign accepts them. Without the profile, use TimeboxNowPlaying.entitlements instead. -->
+    <key>com.apple.application-identifier</key>
+    <string>3ML6V62AF5.com.aicreated.pixoo64-claude</string>
+    <key>com.apple.developer.team-identifier</key>
+    <string>3ML6V62AF5</string>
+
+    <!-- Hardened-runtime resource-access entitlements (self-granted; no profile needed). -->
+    <key>com.apple.security.device.audio-input</key>
+    <true/>
+    <key>com.apple.security.automation.apple-events</key>
+    <true/>
+</dict>
+</plist>

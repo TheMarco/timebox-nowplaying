@@ -1,4 +1,5 @@
 import Foundation
+import Darwin
 import TimeboxKit
 
 /// A Pixoo on the LAN, for the connect menu.
@@ -73,6 +74,67 @@ final class PixooBackend: DisplayBackend {
         } catch {
             return []
         }
+    }
+
+    /// Actively scan the local /24 subnet(s) for a device answering the Pixoo HTTP API. More
+    /// reliable than Divoom's cloud "same-LAN" lookup (which often returns nothing). Probes hosts
+    /// concurrently with a short timeout and returns the first subnet that yields a match.
+    static func scanLAN() async -> [PixooDevice] {
+        for prefix in localIPv4Prefixes() {
+            let hosts = (1...254).map { "\(prefix).\($0)" }
+            let found = await probe(hosts)
+            if !found.isEmpty { return found }
+        }
+        return []
+    }
+
+    private static func probe(_ hosts: [String]) async -> [PixooDevice] {
+        await withTaskGroup(of: PixooDevice?.self) { group in
+            let cap = 48
+            var i = 0
+            while i < min(cap, hosts.count) { group.addTask { [h = hosts[i]] in await probeOne(h) }; i += 1 }
+            var out: [PixooDevice] = []
+            while let res = await group.next() {
+                if let r = res { out.append(r) }
+                if i < hosts.count { group.addTask { [h = hosts[i]] in await probeOne(h) }; i += 1 }
+            }
+            return out
+        }
+    }
+
+    private static func probeOne(_ host: String) async -> PixooDevice? {
+        guard let url = URL(string: "http://\(host)/post") else { return nil }
+        var req = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 1.5)
+        req.httpMethod = "POST"
+        req.httpBody = try? JSONSerialization.data(withJSONObject: ["Command": "Draw/GetHttpGifId"])
+        guard let (data, resp) = try? await URLSession.shared.data(for: req),
+              let http = resp as? HTTPURLResponse, http.statusCode == 200,
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              json["PicId"] != nil || (json["error_code"] as? Int) == 0 else { return nil }
+        return PixooDevice(name: "Pixoo 64", host: host)
+    }
+
+    /// The "a.b.c" prefixes of this Mac's active private IPv4 interfaces (skips loopback/link-local).
+    private static func localIPv4Prefixes() -> [String] {
+        var prefixes: [String] = []
+        var ifaddr: UnsafeMutablePointer<ifaddrs>?
+        guard getifaddrs(&ifaddr) == 0, let first = ifaddr else { return [] }
+        defer { freeifaddrs(ifaddr) }
+        for ptr in sequence(first: first, next: { $0.pointee.ifa_next }) {
+            let flags = Int32(ptr.pointee.ifa_flags)
+            guard (flags & IFF_UP) == IFF_UP, (flags & IFF_LOOPBACK) == 0,
+                  let addr = ptr.pointee.ifa_addr, addr.pointee.sa_family == UInt8(AF_INET) else { continue }
+            var host = [CChar](repeating: 0, count: Int(NI_MAXHOST))
+            getnameinfo(addr, socklen_t(addr.pointee.sa_len), &host, socklen_t(host.count), nil, 0, NI_NUMERICHOST)
+            let ip = String(cString: host)
+            if ip.hasPrefix("169.254.") || ip == "127.0.0.1" { continue }
+            let parts = ip.split(separator: ".")
+            if parts.count == 4 {
+                let prefix = parts[0..<3].joined(separator: ".")
+                if !prefixes.contains(prefix) { prefixes.append(prefix) }
+            }
+        }
+        return prefixes
     }
 
     // MARK: - DisplayBackend

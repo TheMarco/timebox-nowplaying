@@ -126,20 +126,29 @@ enum DigitalClockRenderer {
         drawLCDTime(into: &s, date: date, accent: acc, topY: 6, height: 26,
                     calendar: calendar, use24Hour: use24Hour)
 
-        // Streamed "Artist — Title" ticker in the Konami arcade font (crisp, 1:1 device px).
+        // Streamed "Artist — Title" ticker in the 5px PixelFont, scaled up (2× on the Pixoo) and
+        // centered in the bottom 16px band — matches the iOS app exactly (2×2 pixel blit).
         let text = ticker.trimmingCharacters(in: .whitespaces)
         if !text.isEmpty {
-            let cols = ArcadeFont.columns(for: text)
-            let fh = ArcadeFont.height
-            let ty = size - fh - 4
+            let scale = max(1, tickerScale)
+            let cols = PixelFont.columns(for: text)
+            let fh = PixelFont.height
+            let band = 16
+            let ty = (size - band) + (band - fh * scale) / 2
             let tickerColor = Palette.mix(acc, PixelRGB(red: 255, green: 255, blue: 255), 0.35)
             for (i, col) in cols.enumerated() {
-                let sx = i - scroll + size           // enters from the right edge
-                if sx < 0 || sx >= size { continue }
-                for gy in 0..<fh where col[gy] { s.set(sx, ty + gy, tickerColor) }
+                for sxi in 0..<scale {
+                    let sx = i * scale + sxi - scroll + size   // enters from the right edge
+                    if sx < 0 || sx >= size { continue }
+                    for gy in 0..<fh where col[gy] {
+                        for syi in 0..<scale {
+                            let py = ty + gy * scale + syi
+                            if py >= 0, py < size { s.set(sx, py, tickerColor) }
+                        }
+                    }
+                }
             }
         }
-        _ = tickerScale
         return s
     }
 
@@ -147,8 +156,7 @@ enum DigitalClockRenderer {
     static func tickerSpan(for text: String, size: Int, tickerScale: Int) -> Int {
         let trimmed = text.trimmingCharacters(in: .whitespaces)
         if trimmed.isEmpty { return 0 }
-        if size == 16 { return PixelFont.columns(for: trimmed).count * tickerScale + size }
-        return ArcadeFont.columns(for: trimmed).count + size   // 1:1 arcade font
+        return PixelFont.columns(for: trimmed).count * tickerScale + size
     }
 
     // MARK: - 7-segment LCD time
