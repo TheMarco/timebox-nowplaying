@@ -14,12 +14,12 @@ It runs from the **menu bar** (the line-chart icon), not the Dock — there's no
 launch it finds a Pixoo 64 on your network by itself and just starts showing things; no Divoom
 app required.
 
-> The repo is historically named `timebox-nowplaying`; it began as a 16×16 Timebox app and grew
+> This project began as a 16×16 Timebox app (hence the old `timebox-nowplaying` name) and grew
 > Pixoo 64 support and the Claude usage gizmo. Both devices are still supported.
 
 ## Download
 
-**[⬇️ Download the latest release](https://github.com/TheMarco/timebox-nowplaying/releases/latest)**
+**[⬇️ Download the latest release](https://github.com/TheMarco/divoom-pixoo64-timebox-tools/releases/latest)**
 
 Grab the `.dmg`, open it, and drag the app into Applications. The build is signed and notarized
 by Apple, so it opens with a normal double-click.
